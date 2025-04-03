@@ -8,27 +8,27 @@ export default function SubmitPage() {
   const router = useRouter()
   const [jsonInput, setJsonInput] = useState('')
   const [message, setMessage] = useState<{ type: 'success' | 'error' | 'info' | ''; text: string }>({ type: '', text: '' })
-  const [users, setUsers] = useState<{ id: string; name: string }[]>([])
-  const [selectedUserId, setSelectedUserId] = useState('')
+  const [interviewers, setInterviewers] = useState<{ id: string; name: string }[]>([])
+  const [selectedInterviewerId, setSelectedInterviewerId] = useState('')
   const [isLoading, setIsLoading] = useState(false)
   const [isSubmitting, setIsSubmitting] = useState(false)
 
   useEffect(() => {
-    const fetchUsers = async () => {
+    const fetchInterviewers = async () => {
       setIsLoading(true)
-      const { data, error } = await supabase.from('users').select('id, name')
-      if (data) setUsers(data)
+      const { data, error } = await supabase.from('interviewers').select('id, name')
+      if (data) setInterviewers(data)
       if (error) {
         console.error(error)
-        setMessage({ type: 'error', text: `ユーザー取得に失敗しました: ${error.message}` })
+        setMessage({ type: 'error', text: `面接官の取得に失敗しました: ${error.message}` })
       }
       setIsLoading(false)
     }
-    fetchUsers()
+    fetchInterviewers()
   }, [])
 
   const handleSubmit = async () => {
-    if (!selectedUserId) {
+    if (!selectedInterviewerId) {
       setMessage({ type: 'error', text: '面接官を選択してください。' })
       return
     }
@@ -37,55 +37,62 @@ export default function SubmitPage() {
       setIsSubmitting(true)
       setMessage({ type: 'info', text: '保存中...' })
 
-      const parsed = JSON.parse(jsonInput)
-      parsed.user_id = selectedUserId
+      let parsed
+      try {
+        parsed = JSON.parse(jsonInput)
+      } catch (err) {
+        console.error('❌ JSONパースエラー:', err)
+        setMessage({ type: 'error', text: 'JSONの形式に誤りがあります。' })
+        return
+      }
 
-      // 各部分を分解
-      const { comments_with_evidence, analysis_summary, ...mainData } = parsed
+      const { session, sections, evaluations, summary, strategy } = parsed
+      if (!session || !sections || !evaluations || !summary) {
+        setMessage({ type: 'error', text: 'session / sections / evaluations / summary が不足しています。' })
+        return
+      }
 
-      // 1. 面接フィードバックを保存
-      const { data: feedbackData, error: feedbackError } = await supabase
-      .from('interview_feedbacks')
-      .insert([mainData])
-      .select('id')
-      .single()
-    
-    if (feedbackError || !feedbackData) {
-      throw feedbackError || new Error('保存結果が返ってきませんでした。')
-    }
-      const interview_feedbacks_id = feedbackData.id
+      // sessionにinterviewer_idを追加
+      const sessionToInsert = {
+        ...session,
+        interviewer_id: selectedInterviewerId
+      }
 
-// 分析ログ
-console.log('🟦 analysis_summary:', analysis_summary)
-if (analysis_summary) {
-  const { error: summaryError } = await supabase
-    .from('interview_analysis_summary')
-    .insert([{ interview_feedbacks_id, ...analysis_summary }])
+      const { data: sessionData, error: sessionError } = await supabase
+        .from('interview_sessions')
+        .insert([sessionToInsert])
+        .select('id')
+        .single()
 
-  if (summaryError) {
-    console.error('❌ 分析ログ保存エラー:', summaryError)
-  } else {
-    console.log('✅ 分析ログ保存成功')
-  }
-}
+      if (sessionError || !sessionData) {
+        throw sessionError || new Error('セッションの保存に失敗しました。')
+      }
 
-// コメント＋根拠
-console.log('🟧 comments_with_evidence:', comments_with_evidence)
-if (Array.isArray(comments_with_evidence)) {
-  const enriched = comments_with_evidence.map((item) => ({
-    interview_feedbacks_id,
-    ...item
-  }))
-  const { error: commentError } = await supabase
-    .from('interview_comments_with_evidence')
-    .insert(enriched)
+      const session_id = sessionData.id
 
-  if (commentError) {
-    console.error('❌ コメント保存エラー:', commentError)
-  } else {
-    console.log('✅ コメント保存成功')
-  }
-}
+      // interview_sections 保存
+      const sectionInsert = sections.map((s: any) => ({
+        ...s,
+        interview_session_id: session_id
+      }))
+      const { error: sectionError } = await supabase.from('interview_sections').insert(sectionInsert)
+      if (sectionError) console.error('❌ セクション保存エラー:', sectionError)
+
+      // interview_evaluations 保存
+      const evaluationInsert = evaluations.map((e: any) => ({
+        ...e,
+        interview_session_id: session_id
+      }))
+      const { error: evalError } = await supabase.from('interview_evaluations').insert(evaluationInsert)
+      if (evalError) console.error('❌ 評価保存エラー:', evalError)
+
+      // summary 保存
+      const { good, bad, advice } = summary
+      const { error: summaryError } = await supabase
+        .from('summary')
+        .insert([{ interview_session_id: session_id, good, bad, advice }])
+      if (summaryError) console.error('❌ summary保存エラー:', summaryError)
+
       setMessage({ type: 'success', text: '✅ フィードバックが正常に保存されました！' })
       setJsonInput('')
     } catch (err: any) {
@@ -131,12 +138,12 @@ if (Array.isArray(comments_with_evidence)) {
             <label className="block font-medium text-gray-800 mb-2">👤 面接官を選択</label>
             <select
               className="w-full border-gray-300 rounded-lg px-4 py-3"
-              value={selectedUserId}
-              onChange={(e) => setSelectedUserId(e.target.value)}
+              value={selectedInterviewerId}
+              onChange={(e) => setSelectedInterviewerId(e.target.value)}
               disabled={isLoading}
             >
               <option value="">-- 選択してください --</option>
-              {users.map((user) => (
+              {interviewers.map((user) => (
                 <option key={user.id} value={user.id}>
                   {user.name}
                 </option>
@@ -151,10 +158,10 @@ if (Array.isArray(comments_with_evidence)) {
               className="w-full h-64 p-4 border border-gray-300 rounded-lg font-mono text-sm"
               value={jsonInput}
               onChange={(e) => setJsonInput(e.target.value)}
-              placeholder='{"candidate_name": "山田太郎", "interview_date": "2025-03-27", "score_structure": 4, ...}'
+              placeholder='{"session": {...}, "sections": [...], "evaluations": [...], "summary": {...}}'
               spellCheck="false"
             />
-            <p className="text-sm text-gray-500 mt-1">※ user_id は自動的に追加されます</p>
+            <p className="text-sm text-gray-500 mt-1">※ interviewer_id は自動で追加されます</p>
           </div>
 
           {/* メッセージ表示 */}

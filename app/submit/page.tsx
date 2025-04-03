@@ -12,6 +12,8 @@ export default function SubmitPage() {
   const [selectedInterviewerId, setSelectedInterviewerId] = useState('')
   const [isLoading, setIsLoading] = useState(false)
   const [isSubmitting, setIsSubmitting] = useState(false)
+  const [transcriptFile, setTranscriptFile] = useState<File | null>(null)
+  const [transcriptText, setTranscriptText] = useState<string>('')
 
   useEffect(() => {
     const fetchInterviewers = async () => {
@@ -26,6 +28,20 @@ export default function SubmitPage() {
     }
     fetchInterviewers()
   }, [])
+
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    setTranscriptFile(file || null)
+
+    if (file) {
+      const reader = new FileReader()
+      reader.onload = () => {
+        const text = reader.result as string
+        setTranscriptText(text)
+      }
+      reader.readAsText(file)
+    }
+  }
 
   const handleSubmit = async () => {
     if (!selectedInterviewerId) {
@@ -46,16 +62,16 @@ export default function SubmitPage() {
         return
       }
 
-      const { session, sections, evaluations, summary, strategy } = parsed
+      const { session, sections, evaluations, summary } = parsed
       if (!session || !sections || !evaluations || !summary) {
         setMessage({ type: 'error', text: 'session / sections / evaluations / summary が不足しています。' })
         return
       }
 
-      // sessionにinterviewer_idを追加
       const sessionToInsert = {
         ...session,
-        interviewer_id: selectedInterviewerId
+        interviewer_id: selectedInterviewerId,
+        transcript_text: transcriptText
       }
 
       const { data: sessionData, error: sessionError } = await supabase
@@ -70,15 +86,17 @@ export default function SubmitPage() {
 
       const session_id = sessionData.id
 
-      // interview_sections 保存
       const sectionInsert = sections.map((s: any) => ({
-        ...s,
+        title: s.title,
+        start_time: s.start_time,
+        end_time: s.end_time,
+        percentage: s.percentage,
+        content_summary: s.content_summary,
         interview_session_id: session_id
       }))
       const { error: sectionError } = await supabase.from('interview_sections').insert(sectionInsert)
       if (sectionError) console.error('❌ セクション保存エラー:', sectionError)
 
-      // interview_evaluations 保存
       const evaluationInsert = evaluations.map((e: any) => ({
         ...e,
         interview_session_id: session_id
@@ -86,7 +104,6 @@ export default function SubmitPage() {
       const { error: evalError } = await supabase.from('interview_evaluations').insert(evaluationInsert)
       if (evalError) console.error('❌ 評価保存エラー:', evalError)
 
-      // summary 保存
       const { good, bad, advice } = summary
       const { error: summaryError } = await supabase
         .from('summary')
@@ -95,6 +112,8 @@ export default function SubmitPage() {
 
       setMessage({ type: 'success', text: '✅ フィードバックが正常に保存されました！' })
       setJsonInput('')
+      setTranscriptFile(null)
+      setTranscriptText('')
     } catch (err: any) {
       console.error(err)
       setMessage({ type: 'error', text: '保存に失敗しました。JSON形式や構造を確認してください。' })
@@ -106,11 +125,11 @@ export default function SubmitPage() {
   const getMessageStyles = () => {
     switch (message.type) {
       case 'success':
-        return 'bg-green-50 text-green-800 border-green-200'
+        return 'bg-green-50 text-green-900 border-green-200'
       case 'error':
-        return 'bg-red-50 text-red-800 border-red-200'
+        return 'bg-red-50 text-red-900 border-red-200'
       case 'info':
-        return 'bg-blue-50 text-blue-800 border-blue-200'
+        return 'bg-blue-50 text-blue-900 border-blue-200'
       default:
         return 'hidden'
     }
@@ -123,21 +142,20 @@ export default function SubmitPage() {
           <div className="flex items-center justify-between mb-6">
             <div>
               <h1 className="text-2xl font-bold text-gray-900 mb-2">フィードバック登録</h1>
-              <p className="text-gray-600">面接フィードバックをJSON形式で登録します</p>
+              <p className="text-gray-800">面接フィードバックをJSON形式と文字起こしで登録します</p>
             </div>
             <button
               onClick={() => router.push('/feedbacks')}
-              className="px-4 py-2 border border-gray-200 text-gray-700 rounded hover:bg-gray-100"
+              className="px-4 py-2 border border-gray-200 text-gray-900 rounded hover:bg-gray-100"
             >
               一覧に戻る
             </button>
           </div>
 
-          {/* 面接官選択 */}
           <div className="mb-6">
-            <label className="block font-medium text-gray-800 mb-2">👤 面接官を選択</label>
+            <label className="block font-medium text-gray-900 mb-2">👤 面接官を選択</label>
             <select
-              className="w-full border-gray-300 rounded-lg px-4 py-3"
+              className="w-full border-gray-300 rounded-lg px-4 py-3 text-gray-900"
               value={selectedInterviewerId}
               onChange={(e) => setSelectedInterviewerId(e.target.value)}
               disabled={isLoading}
@@ -151,20 +169,28 @@ export default function SubmitPage() {
             </select>
           </div>
 
-          {/* JSON入力 */}
           <div className="mb-6">
-            <label className="block font-medium text-gray-800 mb-2">📋 フィードバックデータ (JSON)</label>
+            <label className="block font-medium text-gray-900 mb-2">📋 フィードバックデータ (JSON)</label>
             <textarea
-              className="w-full h-64 p-4 border border-gray-300 rounded-lg font-mono text-sm"
+              className="w-full h-64 p-4 border border-gray-300 rounded-lg font-mono text-sm text-gray-900"
               value={jsonInput}
               onChange={(e) => setJsonInput(e.target.value)}
               placeholder='{"session": {...}, "sections": [...], "evaluations": [...], "summary": {...}}'
               spellCheck="false"
             />
-            <p className="text-sm text-gray-500 mt-1">※ interviewer_id は自動で追加されます</p>
+            <p className="text-sm text-gray-700 mt-1">※ interviewer_id は自動で追加されます</p>
           </div>
 
-          {/* メッセージ表示 */}
+          <div className="mb-6">
+            <label className="block font-medium text-gray-900 mb-2">📝 面接文字起こしファイル (.txt)</label>
+            <input
+              type="file"
+              accept=".txt"
+              onChange={handleFileChange}
+              className="w-full border-gray-300 rounded-lg px-4 py-2 text-gray-900"
+            />
+          </div>
+
           {message.text && (
             <div className={`mb-6 p-4 border rounded-lg ${getMessageStyles()}`}>
               {message.type === 'error' && <span className="mr-2">⚠️</span>}
@@ -174,7 +200,6 @@ export default function SubmitPage() {
             </div>
           )}
 
-          {/* 送信ボタン */}
           <div className="text-right">
             <button
               onClick={handleSubmit}

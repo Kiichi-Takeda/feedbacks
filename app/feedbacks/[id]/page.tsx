@@ -20,7 +20,7 @@ type InterviewSession = {
   interview_date: string
   duration_minutes: number
   overall_score: number
-  transcript: string
+  transcript_text: string
   interviewers?: {
     id: string
     name: string
@@ -31,6 +31,7 @@ type InterviewSession = {
     start_time: string
     end_time: string
     percentage: number
+    content_summary?: string // ← これを追加
   }[]
   interview_evaluations?: {
     id: string
@@ -212,9 +213,9 @@ export default function FeedbackDetailPage() {
               評価項目
             </button>
             <button
-              onClick={() => setActiveTab('transcript')}
+              onClick={() => setActiveTab('transcript_text')}
               className={`py-4 px-6 font-medium transition-colors ${
-                activeTab === 'transcript'
+                activeTab === 'transcript_text'
                   ? 'border-b-2 border-indigo-500 text-indigo-600'
                   : 'text-gray-600 hover:text-indigo-600'
               }`}
@@ -432,21 +433,31 @@ export default function FeedbackDetailPage() {
                 <div className="space-y-4">
                   {data.interview_sections?.map((section, index) => (
                     <div key={section.id} className="flex items-start relative">
+                      {/* 時間表示 */}
                       <div className="flex-none w-16 text-right text-sm text-gray-500 pt-1 pr-4">
                         {section.start_time}
                       </div>
+
+                      {/* タイムラインアイコン */}
                       <div 
                         className="flex-none w-6 h-6 rounded-full flex items-center justify-center relative z-10"
                         style={{ backgroundColor: SECTION_COLORS[index % SECTION_COLORS.length] }}
                       >
                         <span className="text-white text-xs font-bold">{index + 1}</span>
                       </div>
+
+                      {/* セクション内容 */}
                       <div className="ml-4 bg-gray-50 rounded-lg p-4 flex-grow" 
                         style={{ borderLeft: `3px solid ${SECTION_COLORS[index % SECTION_COLORS.length]}` }}>
                         <div className="font-semibold text-gray-800">{section.title}</div>
                         <div className="text-sm text-gray-500 mt-1">
                           {section.start_time}〜{section.end_time}（全体の{section.percentage}%）
                         </div>
+                        {section.content_summary && (
+                          <div className="mt-3 text-sm text-gray-700 whitespace-pre-wrap leading-relaxed">
+                            {section.content_summary}
+                          </div>
+                        )}
                       </div>
                     </div>
                   ))}
@@ -518,15 +529,15 @@ export default function FeedbackDetailPage() {
           </div>
         )}
 
-        {activeTab === 'transcript' && (
+        {activeTab === 'transcript_text' && (
           <div className="bg-white rounded-xl shadow-sm p-6 mb-8">
             <h2 className="text-xl font-bold text-gray-800 mb-6 flex items-center">
               <FileText className="mr-2 h-5 w-5 text-indigo-500" />
               面接文字起こし全文
             </h2>
-            {data.transcript ? (
+            {data.transcript_text ? (
               <div className="prose max-w-none">
-                <pre className="whitespace-pre-wrap text-gray-700 bg-gray-50 p-4 rounded-lg border border-gray-200">{data.transcript}</pre>
+                <pre className="whitespace-pre-wrap text-gray-700 bg-gray-50 p-4 rounded-lg border border-gray-200">{data.transcript_text}</pre>
               </div>
             ) : (
               <div className="text-gray-500 italic">文字起こしデータがありません</div>
